@@ -150,6 +150,8 @@ button.ghost{background:transparent;color:var(--mut);border:1px solid var(--bd);
 
 <script>
 const KEY='pharmacy_v1',LOW=3;
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxIMvvtkBAU6UMZqXcE0CW97RKD3pQKZSaw58jloQvLt1wwA5ZQx0lKyCz4qvpd0x2Y/exec"; // ลิงก์ Google Sheets Web App
+
 const seed=()=>({meds:[
  {id:1,name:'Paracetamol 500 mg',unit:'เม็ด',stock:120},
  {id:2,name:'Amoxicillin 500 mg',unit:'แคปซูล',stock:2},
@@ -243,24 +245,45 @@ function refreshRows(){['d','r'].forEach(k=>rowsOf(k).forEach(r=>fill(r,k)))}
  b.onclick=e=>{const x=e.target.closest('.del');if(!x)return;x.closest('.rw').remove();if(!b.children.length)addRow(k)}});
 const mkRef=()=>'T'+Date.now().toString(36).slice(-6).toUpperCase();
 function collect(k){const o={};for(const r of rowsOf(k)){const id=r.querySelector('select').value,q=parseInt(r.querySelector('.r-qty').value,10);if(!id||!(q>0))return null;o[id]=(o[id]||0)+q}return o}
+
+// ฟังก์ชันส่งข้อมูลเข้า Google Sheets
+function sendToGoogleSheets(payload) {
+  fetch(WEB_APP_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(err => console.error('Sheet Sync Error:', err));
+}
+
 $('fDisp').onsubmit=e=>{
  e.preventDefault();
  const need=collect('d');if(!need)return toast('กรุณาเลือกยาและจำนวนให้ครบทุกแถว',1);
  for(const id in need){const m=S.meds.find(x=>x.id==id);if(need[id]>m.stock)return toast(m.name+': สต็อกไม่พอ (เหลือ '+m.stock+')',1)}
  const rf=mkRef(),low=[],p=$('dName').value.trim(),sy=$('dSym').value.trim();
  for(const id in need){const m=S.meds.find(x=>x.id==id);m.stock-=need[id];if(m.stock<=LOW)low.push(m.name);
-  S.logs.unshift({type:'out',date:today(),time:nowStr(),med:m.name,qty:need[id],patient:p,symptom:sy,note:'',ref:rf})}
+  S.logs.unshift({type:'out',date:today(),time:nowStr(),med:m.name,qty:need[id],patient:p,symptom:sy,note:'',ref:rf});
+  
+  // ส่งข้อมูลการจ่ายยาเข้า Google Sheets
+  sendToGoogleSheets({type:'จ่ายออก', itemName:m.name, quantity:need[id], patientName:p, symptom:sy});
+ }
  save();e.target.reset();resetRows('d');render();tick();
  toast('จ่ายยา '+Object.keys(need).length+' รายการเรียบร้อย'+(low.length?' · ⚠️ ใกล้หมด: '+low.join(', '):''));
 };
+
 $('fRest').onsubmit=e=>{
  e.preventDefault();
  const add=collect('r');if(!add)return toast('กรุณาเลือกยาและจำนวนให้ครบทุกแถว',1);
  const rf=mkRef(),d=$('rDate').value||today(),note=$('rNote').value.trim();
  for(const id in add){const m=S.meds.find(x=>x.id==id);m.stock+=add[id];
-  S.logs.unshift({type:'in',date:d,time:nowStr(),med:m.name,qty:add[id],patient:'',symptom:'',note:note,ref:rf})}
+  S.logs.unshift({type:'in',date:d,time:nowStr(),med:m.name,qty:add[id],patient:'',symptom:'',note:note,ref:rf});
+  
+  // ส่งข้อมูลการรับเข้าเข้า Google Sheets
+  sendToGoogleSheets({type:'รับเข้า', itemName:m.name, quantity:add[id], patientName:'-', symptom:note||'รับเข้าสต็อก'});
+ }
  save();$('rNote').value='';$('rDate').value=today();resetRows('r');render();toast('รับยาเข้า '+Object.keys(add).length+' รายการแล้ว');
 };
+
 $('fNew').onsubmit=e=>{
  e.preventDefault();
  const seen=new Set(S.meds.map(m=>m.name.toLowerCase())),items=[];
